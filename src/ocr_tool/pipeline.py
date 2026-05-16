@@ -25,6 +25,34 @@ def load_image(path: str) -> "np.ndarray":
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
 
+def run_from_array(
+    img: "np.ndarray",
+    *,
+    langs: list[str] | None = None,
+    preprocess_steps: list[str] | None = None,
+    do_layout: bool = False,
+    output_format: str = "plain",
+    save_preprocessed: str | None = None,
+) -> str:
+    """Run pipeline on an in-memory image array — no temp files needed."""
+    if preprocess_steps:
+        img = preprocess.apply_chain(img, preprocess_steps)
+        if save_preprocessed:
+            cv2.imwrite(save_preprocessed, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
+    results = ocr.recognize(img, langs=langs)
+
+    layout_data = layout.analyze_image(results) if do_layout else None
+
+    fmt_func_name = formatters.FORMATTERS.get(output_format, (None,))[0]
+    if fmt_func_name is None:
+        fmt_func_name = "format_plain"
+    fmt_func = getattr(formatters, fmt_func_name)
+    if output_format in ("json", "html"):
+        return fmt_func(results, layout=layout_data)
+    return fmt_func(results)
+
+
 def run_single(
     path: str | None = None,
     *,

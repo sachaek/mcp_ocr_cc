@@ -1,7 +1,6 @@
 """MCP server — exposes ocr-tool as native Claude Code tools.
 
 Install: pip install ocr-tool[mcp]
-Register: claude mcp add --transport stdio --scope user ocr-tool -- python -m ocr_tool.mcp_server
 """
 from __future__ import annotations
 
@@ -9,12 +8,22 @@ import json
 import logging
 import os
 import sys
-import tempfile
 
-from .pipeline import run_single
+from .pipeline import run_from_array, run_single
 
-# All logging must go to stderr — stdout is JSON-RPC transport
 log = logging.getLogger(__name__)
+
+
+def _parse_options(langs: str, preprocess: str | None, layout: bool):
+    """Parse common OCR options into structured form."""
+    preprocess_steps = None
+    if preprocess:
+        preprocess_steps = [s.strip() for s in preprocess.split(",") if s.strip()]
+    return {
+        "langs": langs.split("+") if langs else ["ru", "en"],
+        "preprocess_steps": preprocess_steps,
+        "do_layout": layout,
+    }
 
 
 def _image_to_text(
@@ -24,17 +33,9 @@ def _image_to_text(
     layout: bool = False,
     output_format: str = "plain",
 ) -> str:
-    """Run OCR on an image and return formatted text."""
-    preprocess_steps = None
-    if preprocess:
-        preprocess_steps = [s.strip() for s in preprocess.split(",") if s.strip()]
-    return run_single(
-        path,
-        langs=langs.split("+") if langs else ["ru", "en"],
-        preprocess_steps=preprocess_steps,
-        do_layout=layout,
-        output_format=output_format,
-    )
+    """Run OCR on an image file and return formatted text."""
+    opts = _parse_options(langs, preprocess, layout)
+    return run_single(path, output_format=output_format, **opts)
 
 
 try:
@@ -100,16 +101,8 @@ try:
                 return json.dumps({"error": f"Monitor {monitor} not found. Available: {available}"})
 
             img = capture_screen(monitor)
-
-            fd, tmp_path = tempfile.mkstemp(suffix=".png")
-            try:
-                import cv2
-                cv2.imwrite(tmp_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-                result = _image_to_text(tmp_path, langs, preprocess, layout, output_format)
-                return result
-            finally:
-                os.close(fd)
-                os.unlink(tmp_path)
+            opts = _parse_options(langs, preprocess, layout)
+            return run_from_array(img, output_format=output_format, **opts)
         except ImportError:
             return json.dumps({"error": "Screen capture requires mss. Install: pip install ocr-tool[screen]"})
         except Exception as e:
