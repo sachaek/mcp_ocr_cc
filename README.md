@@ -171,29 +171,40 @@ ocr-tool --screen --monitor 2
 
 ---
 
-## Для Claude Code Users
+## MCP Server для Claude Code
 
-После установки инструменты `ocr_image` и `ocr_screen` доступны как нативные MCP-инструменты.
+Проект содержит `.mcp.json` — Claude Code **автоматически** подхватывает его при открытии папки. Никакой ручной регистрации.
 
-### Быстрый старт (1 команда)
+### Установка
 
 ```bash
-pip install -e ".[all]" && claude mcp add --transport stdio --scope user ocr-tool python -m ocr_tool.mcp_server
+git clone https://github.com/sachaek/mcp_ocr_cc.git && cd mcp_ocr_cc
+pip install -e ".[all]"
 ```
 
-### Как это работает
+Открой папку в Claude Code — и инструменты готовы.
 
-В проекте есть `.mcp.json` — Claude Code авто-обнаруживает его и подключает MCP-сервер.
-После `pip install -e .` пакет импортируется из любого места, и `python -m ocr_tool.mcp_server` запускает сервер.
+### MCP-инструменты
 
-**Что получаете:**
-
-| Инструмент | Что делает |
+| Инструмент | Параметры |
 |-----------|-----------|
-| `ocr_image(path, langs, preprocess, layout, output_format)` | Распознаёт текст из файла |
-| `ocr_screen(monitor, langs, preprocess, layout, output_format)` | Скриншот + OCR |
+| `ocr_image` | `path` (путь к файлу), `langs` (ru+en), `preprocess` (deskew,clahe,...), `layout` (true/false), `output_format` (plain/json/csv/html) |
+| `ocr_screen` | `monitor` (номер), `langs`, `preprocess`, `layout`, `output_format` |
 
-Никаких подтверждений, никаких разрешений — работают как встроенные.
+**Работает на любой модели** — OCR запускается локально на CPU, интернет не нужен.
+
+### Что Claude сам сделает
+
+Благодаря `CLAUDE.md` при первом открытии Claude:
+1. Проверит, установлен ли пакет
+2. Если нет — предложит `pip install -e .`
+3. Будет использовать `ocr_image` когда не сможет прочитать картинку напрямую
+
+### Как это устроено
+
+- `.mcp.json` — Claude Code авто-обнаруживает MCP-сервер
+- `CLAUDE.md` — инструкции для Claude (проверка установки, fallback на OCR)
+- `SETUP.md` — промт для самого первого запуска (скопируй и вставь в Claude)
 
 ---
 
@@ -203,22 +214,6 @@ pip install -e ".[all]" && claude mcp add --transport stdio --scope user ocr-too
 2. **Preprocessing** — OpenCV: пороговая обработка, выравнивание, шумоподавление, повышение контраста и резкости
 3. **Layout** — геометрический анализ bounding box'ов: определение порядка чтения, колонок, заголовков, таблиц
 4. **Никаких LLM, детектронов, трансформеров** — всё легковесное, ставится в `pip install`
-
----
-
-## Сравнение: было → стало
-
-| Было (v1) | Стало (v2) |
-|-----------|-----------|
-| `python ocr_screenshot.py file.png` | `ocr-tool file.png` (или `python -m ocr_tool`) |
-| Только plain text | `--output-format json / csv / html` |
-| Нет preprocessing | `--preprocess clahe,deskew,upscale,...` |
-| Нет layout | `--layout` — колонки, заголовки, таблицы |
-| Одно изображение | `--batch ./dir/ --recursive` |
-| Только файлы | `--screen` — захват экрана |
-| Зависимости: easyocr | easyocr + опционально mss |
-
----
 
 ## License
 
