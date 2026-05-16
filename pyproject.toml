@@ -21,6 +21,7 @@ all = ["ocr-tool[screen,mcp]"]
 
 [project.scripts]
 ocr-tool = "ocr_tool.cli:main"
+ocr-tool-mcp = "ocr_tool.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
