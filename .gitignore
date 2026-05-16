@@ -17,8 +17,9 @@ env/
 .DS_Store
 Thumbs.db
 
-# Claude
-.claude/
+# Claude — track settings, ignore rest
+.claude/*
+!.claude/settings.json
 
 # Python
 .pytest_cache/
