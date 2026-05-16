@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ocr-tool"
+version = "2.0.0"
+description = "Extract text from images and screenshots using OCR"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+    "easyocr>=1.7",
+]
+
+[project.optional-dependencies]
+screen = ["mss>=9.0"]
+mcp = ["mcp>=1.0"]
+test = ["pytest>=7.0"]
+all = ["ocr-tool[screen,mcp]"]
+
+[project.scripts]
+ocr-tool = "ocr_tool.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
