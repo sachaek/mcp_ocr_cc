@@ -143,6 +143,10 @@ try:
             format="[ocr-tool-mcp] %(levelname)s: %(message)s",
             stream=sys.stderr,
         )
+        log.info("Preloading OCR model (ru+en)...")
+        from .ocr import get_reader  # noqa: PLC0415
+        get_reader(["ru", "en"])  # <-- load model NOW, not on first tool call
+        log.info("OCR model preloaded — ready for fast OCR")
         server.run(transport="stdio")
 
 except ImportError:
