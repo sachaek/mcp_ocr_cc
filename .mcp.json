@@ -2,8 +2,10 @@
   "mcpServers": {
     "ocr-tool": {
       "command": "python",
-      "args": ["-m", "ocr_tool.mcp_server"],
-      "env": {}
+      "args": ["-u", "-m", "ocr_tool.mcp_server"],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
     }
   }
 }

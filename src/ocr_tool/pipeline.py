@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import logging
-import os
-import sys
-from typing import TYPE_CHECKING
+import time
+from typing import TYPE_CHECKING, Callable
 
 import cv2
 
@@ -13,16 +12,31 @@ from . import capture, formatters, layout, ocr, preprocess
 if TYPE_CHECKING:
     import numpy as np
 
+ProgressCB = Callable[[int, int, str], None] | None
+
 log = logging.getLogger(__name__)
+
+
+MAX_PIXELS = 1_920 * 1_080  # downscale if image exceeds this
+
+
+def _downscale_if_needed(img: "np.ndarray") -> "np.ndarray":
+    """Downscale large images to keep OCR fast."""
+    h, w = img.shape[:2]
+    if w * h > MAX_PIXELS:
+        scale = (MAX_PIXELS / (w * h)) ** 0.5
+        new_w, new_h = int(w * scale), int(h * scale)
+        return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    return img
 
 
 def load_image(path: str) -> "np.ndarray":
     """Load an image file as RGB numpy array."""
     img = cv2.imread(path)
     if img is None:
-        print(f"Error: could not read image file: {path}", file=sys.stderr)
-        sys.exit(1)
-    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        raise FileNotFoundError(f"Could not read image: {path}")
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    return _downscale_if_needed(img)
 
 
 def run_from_array(
@@ -33,24 +47,45 @@ def run_from_array(
     do_layout: bool = False,
     output_format: str = "plain",
     save_preprocessed: str | None = None,
+    progress_cb: ProgressCB = None,
 ) -> str:
     """Run pipeline on an in-memory image array — no temp files needed."""
+    total = 4 + bool(do_layout)
+    step = 0
+
+    def _report(msg: str):
+        nonlocal step
+        if progress_cb:
+            progress_cb(step, total, msg)
+        step += 1
+
+    img = _downscale_if_needed(img)
+    _report("Image ready")
+
     if preprocess_steps:
         img = preprocess.apply_chain(img, preprocess_steps)
         if save_preprocessed:
             cv2.imwrite(save_preprocessed, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+    _report("Preprocessing done")
 
-    results = ocr.recognize(img, langs=langs)
+    results = ocr.recognize(img, langs=langs, progress_cb=progress_cb)
+    _report("Text recognized")
 
-    layout_data = layout.analyze_image(results) if do_layout else None
+    layout_data = None
+    if do_layout:
+        layout_data = layout.analyze_image(results)
+    _report("Layout analyzed")
 
     fmt_func_name = formatters.FORMATTERS.get(output_format, (None,))[0]
     if fmt_func_name is None:
         fmt_func_name = "format_plain"
     fmt_func = getattr(formatters, fmt_func_name)
     if output_format in ("json", "html"):
-        return fmt_func(results, layout=layout_data)
-    return fmt_func(results)
+        result = fmt_func(results, layout=layout_data)
+    else:
+        result = fmt_func(results)
+    _report("Done")
+    return result
 
 
 def run_single(
@@ -61,6 +96,7 @@ def run_single(
     do_layout: bool = False,
     output_format: str = "plain",
     save_preprocessed: str | None = None,
+    progress_cb: ProgressCB = None,
 ) -> str:
     """Run the full pipeline on a single image.
 
@@ -71,44 +107,61 @@ def run_single(
         do_layout: Run layout analysis.
         output_format: "plain" | "json" | "csv" | "html"
         save_preprocessed: Path to save preprocessed image (for debugging).
+        progress_cb: Optional callback(current_step, total_steps, message).
 
     Returns:
         Formatted output string.
     """
+    total = 5 + bool(do_layout)
+    step = 0
+
+    def _report(msg: str):
+        nonlocal step
+        if progress_cb:
+            progress_cb(step, total, msg)
+        step += 1
+
     # Capture or load
     if path is None:
-        log.info("Capturing screen...")
         img = capture.capture_screen()
+        _report("Screen captured")
     else:
         img = load_image(path)
+        _report("Image loaded")
 
     # Preprocess
     if preprocess_steps:
-        log.info("Applying preprocessing: %s", ", ".join(preprocess_steps))
         img = preprocess.apply_chain(img, preprocess_steps)
         if save_preprocessed:
             cv2.imwrite(save_preprocessed, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-            log.info("Saved preprocessed image to %s", save_preprocessed)
+        _report("Preprocessing done")
+    else:
+        _report("Preprocessing skipped")
 
     # OCR
-    results = ocr.recognize(img, langs=langs)
+    results = ocr.recognize(img, langs=langs, progress_cb=progress_cb)
+    _report("Text recognized")
 
     # Layout analysis
     layout_data = None
     if do_layout:
         layout_data = layout.analyze_image(results)
+        _report("Layout analyzed")
+    else:
+        _report("Layout skipped")
 
     # Format
     fmt_func_name = formatters.FORMATTERS.get(output_format, (None,))[0]
     if fmt_func_name is None:
         fmt_func_name = "format_plain"
+    fmt_func = getattr(formatters, fmt_func_name)
 
     if output_format in ("json", "html"):
-        fmt_func = getattr(formatters, fmt_func_name)
-        return fmt_func(results, layout=layout_data)
-
-    fmt_func = getattr(formatters, fmt_func_name)
-    return fmt_func(results)
+        result = fmt_func(results, layout=layout_data)
+    else:
+        result = fmt_func(results)
+    _report("Done")
+    return result
 
 
 def run_batch(

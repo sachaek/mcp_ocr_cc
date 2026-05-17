@@ -26,20 +26,39 @@ def _parse_options(langs: str, preprocess: str | None, layout: bool):
     }
 
 
+def _mk_progress(ctx):
+    """Build a progress callback from a FastMCP Context."""
+    import time as _time
+
+    _start = _time.time()
+    _last_step = ""
+
+    def cb(current: int, total: int, msg: str):
+        nonlocal _last_step
+        if msg == _last_step:
+            return  # deduplicate
+        _last_step = msg
+        elapsed = _time.time() - _start
+        ctx.info(f"[{current}/{total}] {msg} ({elapsed:.1f}s)")
+        ctx.report_progress(current, total)
+    return cb
+
+
 def _image_to_text(
     path: str,
     langs: str = "ru+en",
     preprocess: str | None = None,
     layout: bool = False,
     output_format: str = "plain",
+    progress_cb=None,
 ) -> str:
     """Run OCR on an image file and return formatted text."""
     opts = _parse_options(langs, preprocess, layout)
-    return run_single(path, output_format=output_format, **opts)
+    return run_single(path, output_format=output_format, progress_cb=progress_cb, **opts)
 
 
 try:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.fastmcp import FastMCP, Context
 
     server = FastMCP("ocr-tool")
 
@@ -52,6 +71,7 @@ try:
         preprocess: str | None = None,
         layout: bool = False,
         output_format: str = "plain",
+        ctx: Context | None = None,
     ) -> str:
         """Run OCR on an image file.
 
@@ -63,10 +83,11 @@ try:
             output_format: Output format — 'plain', 'json', 'csv', or 'html'.
         """
         log.info("ocr_image: path=%s langs=%s", path, langs)
+        cb = _mk_progress(ctx) if ctx else None
         if not os.path.isfile(path):
             return json.dumps({"error": f"File not found: {path}"})
         try:
-            result = _image_to_text(path, langs, preprocess, layout, output_format)
+            result = _image_to_text(path, langs, preprocess, layout, output_format, progress_cb=cb)
             return result
         except Exception as e:
             log.exception("ocr_image failed")
@@ -81,6 +102,7 @@ try:
         preprocess: str | None = None,
         layout: bool = False,
         output_format: str = "plain",
+        ctx: Context | None = None,
     ) -> str:
         """Capture a monitor screen and run OCR on it.
 
@@ -92,6 +114,7 @@ try:
             output_format: Output format — 'plain', 'json', 'csv', or 'html'.
         """
         log.info("ocr_screen: monitor=%d langs=%s", monitor, langs)
+        cb = _mk_progress(ctx) if ctx else None
         try:
             from .capture import capture_screen, list_monitors
 
@@ -100,9 +123,13 @@ try:
                 available = {m["num"] for m in monitors}
                 return json.dumps({"error": f"Monitor {monitor} not found. Available: {available}"})
 
+            if cb:
+                cb(0, 5, "Capturing screen...")
             img = capture_screen(monitor)
+            if cb:
+                cb(1, 5, "Screen captured")
             opts = _parse_options(langs, preprocess, layout)
-            return run_from_array(img, output_format=output_format, **opts)
+            return run_from_array(img, output_format=output_format, progress_cb=cb, **opts)
         except ImportError:
             return json.dumps({"error": "Screen capture requires mss. Install: pip install ocr-tool[screen]"})
         except Exception as e:
